@@ -10,22 +10,31 @@ export default function Avatars() {
   const [items, setItems] = useState<Item[]>([])
   const [saving, setSaving] = useState<string | null>(null)
 
-  useEffect(() => {
-    const load = async () => {
-      // Lista los archivos del bucket 'avatars' (carpeta raíz)
-      const { data: files, error } = await supabase.storage.from('avatars').list('', { limit: 100 })
-      if (error) return console.error(error)
+useEffect(() => {
+  const load = async () => {
+    // Lista los objetos del bucket 'avatars' (raíz)
+    const { data: files, error } = await supabase.storage.from('avatars').list('', { limit: 200 })
+    if (error) return console.error(error)
 
-      const withUrls =
-        files?.filter(f => !f.name.endsWith('/')).map(f => {
-          const { data } = supabase.storage.from('avatars').getPublicUrl(f.name)
-          return { name: f.name, url: data.publicUrl }
-        }) ?? []
+    // 1) Filtra placeholders y archivos ocultos
+    const onlyFiles = (files ?? []).filter(f =>
+      !f.name.startsWith('.') &&  // excluye .emptyFolderPlaceholder y ocultos
+      /\.(png|jpe?g|gif|webp|svg)$/i.test(f.name) // solo imágenes por extensión
+    )
 
-      setItems(withUrls)
-    }
-    load()
-  }, [])
+    // 2) Mapea a URLs públicas
+    const withUrls = onlyFiles.map(f => {
+      const { data } = supabase.storage.from('avatars').getPublicUrl(f.name)
+      return { name: f.name, url: data.publicUrl }
+    })
+
+    // 3) (Opcional) Orden alfabético
+    withUrls.sort((a, b) => a.name.localeCompare(b.name))
+
+    setItems(withUrls)
+  }
+  load()
+}, [])
 
   const choose = async (publicUrl: string) => {
     setSaving(publicUrl)
