@@ -1,44 +1,36 @@
+// pages/dashboard.tsx
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
-import AvatarPicker from '../components/AvatarPicker'
 
-export default function Dashboard(){
-  const [profile, setProfile] = useState<any>(null)
-  const [email, setEmail] = useState<string>('')
+export default function Dashboard() {
+  const router = useRouter()
+  const [email, setEmail] = useState<string | null>(null)
 
-  useEffect(()=>{
-    (async ()=>{
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        setEmail(user.email || '')
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single()
-        setProfile(data || null)
+  useEffect(() => {
+    const run = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.replace('/')
+        return
       }
-    })()
-  }, [])
+      setEmail(session.user.email ?? null)
+    }
+    run()
+  }, [router])
+
+  const signOut = async () => {
+    await supabase.auth.signOut()
+    router.replace('/')
+  }
 
   return (
-    <main style={{maxWidth:820, margin:'40px auto', padding:'0 16px', fontFamily:'system-ui'}}>
-      <h2>Panel R4W</h2>
-      <p>Sesión: {email || 'no iniciada'}</p>
-
-      {profile && (
-        <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:16}}>
-          {profile.avatar_url && (
-            <img src={profile.avatar_url} alt="Mi avatar" width={72} height={72} style={{borderRadius:12, objectFit:'cover'}}/>
-          )}
-          <div style={{fontSize:14, opacity:0.8}}>
-            <div><strong>Avatar activo:</strong> {profile.avatar_code || '—'}</div>
-            <div><strong>URL:</strong> {profile.avatar_url || '—'}</div>
-          </div>
-        </div>
-      )}
-
-      <AvatarPicker/>
+    <main style={{maxWidth:720, margin:'60px auto', fontFamily:'system-ui', padding:'0 16px'}}>
+      <h1>Panel</h1>
+      <p>Sesión: {email ?? '...'}</p>
+      <button onClick={signOut} style={{marginTop:12, padding:'10px 14px', borderRadius:8}}>
+        Cerrar sesión
+      </button>
     </main>
   )
 }
