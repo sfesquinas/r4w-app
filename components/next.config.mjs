@@ -1,1 +1,1 @@
-delete duplicate next.config.mjs (emptied file)
+Delete next.config.mjs (duplicate file)
