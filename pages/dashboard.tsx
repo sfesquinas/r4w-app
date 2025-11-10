@@ -1,71 +1,68 @@
-// pages/dashboard.tsx
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
+import Link from 'next/link'
 
-type Profile = { full_name?: string; avatar_url?: string | null }
+type Profile = {
+  user_id: string
+  full_name: string | null
+  avatar_url: string | null
+}
 
 export default function Dashboard() {
-  const router = useRouter()
-  const [email, setEmail] = useState<string | null>(null)
+  const [email, setEmail] = useState<string>('')
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const load = async () => {
+    (async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        router.replace('/')
+        window.location.href = '/'
         return
       }
-      setEmail(session.user.email ?? null)
+      setEmail(session.user.email || '')
 
-      // Carga perfil
-      const { data: p } = await supabase
+      const { data } = await supabase
         .from('profiles')
-        .select('full_name, avatar_url')
+        .select('*')
         .eq('user_id', session.user.id)
         .maybeSingle()
-      setProfile(p ?? {})
-      setLoading(false)
-    }
-    load()
-  }, [router])
 
-  const signOut = async () => {
+      setProfile(data as Profile | null)
+    })()
+  }, [])
+
+  async function logout() {
     await supabase.auth.signOut()
-    router.replace('/')
+    window.location.href = '/'
   }
-
-  if (loading) return <main style={{padding:24}}>Cargando…</main>
 
   return (
     <main style={{maxWidth:720, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
       <h1>Panel</h1>
-      <p>Sesión: {email}</p>
+      <p>Sesión: <strong>{email}</strong></p>
 
-      <div style={{marginTop:24, display:'flex', gap:16, alignItems:'center'}}>
-        <img
-          src={profile?.avatar_url ?? 'https://placehold.co/88x88?text=R4W'}
-          alt="avatar"
-          width={88}
-          height={88}
-          style={{borderRadius:8, border:'1px solid #ddd', objectFit:'cover'}}
-        />
-        <div>
-          <div><strong>Nombre:</strong> {profile?.full_name ?? '—'}</div>
-          <button
-            onClick={() => router.push('/avatars')}
-            style={{marginTop:8, padding:'8px 12px', borderRadius:8}}
-          >
-            Elegir avatar
-          </button>
+      {profile && (
+        <div style={{display:'flex', gap:16, alignItems:'center', margin:'16px 0'}}>
+          {profile.avatar_url && <img src={profile.avatar_url} alt="avatar" width={72} height={72} style={{borderRadius:12}} />}
+          <div>
+            <div><strong>{profile.full_name || 'Sin nombre'}</strong></div>
+            <small>ID: {profile.user_id}</small>
+          </div>
         </div>
+      )}
+
+      <div style={{display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', marginTop:20}}>
+        <Link href="/answer" className="btn">Responder pregunta</Link>
+        <Link href="/leaderboard" className="btn">Leaderboard</Link>
+        <Link href="/avatars" className="btn">Cambiar avatar</Link>
       </div>
 
-      <button onClick={signOut} style={{marginTop:24, padding:'10px 14px', borderRadius:8}}>
-        Cerrar sesión
-      </button>
+      <button onClick={logout} style={{marginTop:24, padding:'10px 14px', borderRadius:8}}>Cerrar sesión</button>
+
+      <style jsx>{`
+        .btn { display:block; text-align:center; padding:12px 14px; border:1px solid #ccc; border-radius:10px; text-decoration:none }
+        .btn:hover { background:#fafafa }
+      `}</style>
     </main>
   )
 }
