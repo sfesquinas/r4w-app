@@ -1,63 +1,67 @@
+// pages/dashboard.tsx — Opción B (alias fijo sin edición)
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabaseClient'
 import Link from 'next/link'
+import { supabase } from '../lib/supabaseClient'
 
 type Profile = {
-  user_id: string
-  full_name: string | null
+  full_name: string | null   // alias Wisher.N
   avatar_url: string | null
 }
 
 export default function Dashboard() {
-  const [email, setEmail] = useState<string>('')
+  const [email, setEmail] = useState('')
   const [profile, setProfile] = useState<Profile | null>(null)
 
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        window.location.href = '/'
-        return
-      }
-      setEmail(session.user.email || '')
+      if (!session) { window.location.href = '/'; return }
+      setEmail(session.user.email ?? '')
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('full_name, avatar_url')
         .eq('user_id', session.user.id)
         .maybeSingle()
 
-      setProfile(data as Profile | null)
+      if (!error && data) setProfile(data as Profile)
     })()
   }, [])
 
-  async function logout() {
+  const signOut = async () => {
     await supabase.auth.signOut()
     window.location.href = '/'
   }
 
   return (
-    <main style={{maxWidth:720, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
+    <main style={{maxWidth:760, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
       <h1>Panel</h1>
       <p>Sesión: <strong>{email}</strong></p>
 
       {profile && (
-        <div style={{display:'flex', gap:16, alignItems:'center', margin:'16px 0'}}>
-          {profile.avatar_url && <img src={profile.avatar_url} alt="avatar" width={72} height={72} style={{borderRadius:12}} />}
+        <section style={{display:'flex', gap:16, alignItems:'center', margin:'18px 0'}}>
+          <img
+            src={profile.avatar_url ?? 'https://placehold.co/96x96?text=R4W'}
+            alt="avatar"
+            width={96} height={96}
+            style={{borderRadius:12, border:'1px solid #ddd', objectFit:'cover'}}
+          />
           <div>
-            <div><strong>{profile.full_name || 'Sin nombre'}</strong></div>
-            <small>ID: {profile.user_id}</small>
+            <div><small>Alias</small></div>
+            <div style={{fontSize:20, fontWeight:700}}>{profile.full_name ?? 'Wisher'}</div>
           </div>
-        </div>
+        </section>
       )}
 
-      <div style={{display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', marginTop:20}}>
+      <nav style={{display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', marginTop:20}}>
         <Link href="/answer" className="btn">Responder pregunta</Link>
         <Link href="/leaderboard" className="btn">Leaderboard</Link>
         <Link href="/avatars" className="btn">Cambiar avatar</Link>
-      </div>
+      </nav>
 
-      <button onClick={logout} style={{marginTop:24, padding:'10px 14px', borderRadius:8}}>Cerrar sesión</button>
+      <button onClick={signOut} style={{marginTop:24, padding:'10px 14px', borderRadius:8}}>
+        Cerrar sesión
+      </button>
 
       <style jsx>{`
         .btn { display:block; text-align:center; padding:12px 14px; border:1px solid #ccc; border-radius:10px; text-decoration:none }
@@ -66,3 +70,5 @@ export default function Dashboard() {
     </main>
   )
 }
+
+export async function getServerSideProps() { return { props: {} } }
