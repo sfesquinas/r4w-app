@@ -1,8 +1,16 @@
+// pages/leaderboard.tsx
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabaseClient'
 import Link from 'next/link'
+import { supabase } from '../lib/supabaseClient'
 
-type Row = { user_id: string; points: number; email?: string | null; avatar_url?: string | null }
+type Row = {
+  user_id: string
+  points: number
+  last_answer_at: string | null
+  display_name: string | null
+  full_name: string | null
+  avatar_url: string | null
+}
 
 export default function Leaderboard() {
   const [rows, setRows] = useState<Row[]>([])
@@ -13,44 +21,59 @@ export default function Leaderboard() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { window.location.href = '/'; return }
 
-      // 1) Traemos el leaderboard
-      const { data: lb, error } = await supabase.from('v_leaderboard').select('*').limit(50)
-      if (error) { setMsg('Error cargando leaderboard'); return }
+      const { data, error } = await supabase
+        .from('v_leaderboard_profile')
+        .select('user_id, points, last_answer_at, display_name, full_name, avatar_url')
+        .limit(50)
 
-      // 2) Enriquecemos con avatar usando profiles
-      const enriched: Row[] = []
-      for (const r of (lb || []) as any[]) {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('avatar_url')
-          .eq('user_id', r.user_id)
-          .maybeSingle()
-
-        // email por auth.users no está abierto via RLS; si quieres mostrar email, usa tu propio profiles.email
-        enriched.push({ user_id: r.user_id, points: r.points, avatar_url: prof?.avatar_url || null })
+      if (error) {
+        console.error(error)
+        setMsg('Error cargando leaderboard')
+        return
       }
-      setRows(enriched)
+
+      setRows((data || []) as Row[])
     })()
   }, [])
 
   return (
-    <main style={{maxWidth:720, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
+    <main style={{maxWidth:800, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
       <h1>Leaderboard</h1>
-      {msg && <p>{msg}</p>}
+      {msg && <p style={{color:'#b00'}}>{msg}</p>}
 
-      <ol style={{marginTop:16}}>
-        {rows.map((r, i) => (
-          <li key={r.user_id} style={{display:'flex', gap:12, alignItems:'center', margin:'10px 0'}}>
-            {r.avatar_url ? <img src={r.avatar_url} width={40} height={40} style={{borderRadius:8}}/> : <div style={{width:40,height:40,background:'#eee',borderRadius:8}}/>}
-            <div style={{flex:1}}>
-              <strong>Usuario {r.user_id.slice(0,8)}…</strong>
-            </div>
-            <div><strong>{r.points}</strong> pts</div>
-          </li>
-        ))}
+      <ol style={{marginTop:16, paddingLeft:20}}>
+        {rows.map((r, i) => {
+          const name =
+            r.display_name?.trim() ||
+            r.full_name?.trim() ||
+            `Wisher.${r.user_id.slice(0,6)}`
+
+          return (
+            <li key={r.user_id}
+                style={{display:'flex', gap:12, alignItems:'center', margin:'10px 0'}}>
+              {r.avatar_url
+                ? <img src={r.avatar_url} width={40} height={40}
+                       style={{borderRadius:8, objectFit:'cover', border:'1px solid #eee'}} alt="avatar"/>
+                : <div style={{width:40, height:40, borderRadius:8, background:'#eee'}} />
+              }
+
+              <div style={{flex:1}}>
+                <strong>#{i+1}</strong> {name}
+              </div>
+
+              <div style={{minWidth:70, textAlign:'right'}}>
+                <strong>{r.points}</strong> pts
+              </div>
+            </li>
+          )
+        })}
       </ol>
 
-      <p style={{marginTop:24}}><Link href="/dashboard">Volver al panel</Link></p>
+      <p style={{marginTop:24}}>
+        <Link href="/dashboard">Volver al panel</Link>
+      </p>
     </main>
   )
 }
+
+export async function getServerSideProps() { return { props: {} } }
