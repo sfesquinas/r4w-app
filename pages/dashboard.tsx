@@ -3,128 +3,125 @@ import { supabase } from '../lib/supabaseClient'
 import Link from 'next/link'
 
 type Profile = {
-  user_id: string
-  display_name: string | null
-  avatar_url: string | null
-  wisher_number: number | null
+  full_name: string | null
+  id: string
+}
+
+type Avatar = {
+  id: string
+  name: string
+  image_url: string
 }
 
 export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [avatar, setAvatar] = useState<Avatar | null>(null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
     (async () => {
-      setLoading(true)
       const { data: { session } } = await supabase.auth.getSession()
-
       if (!session) {
-        // si no hay sesión, mandamos a la pantalla de login
         window.location.href = '/'
         return
       }
 
-      const { data, error } = await supabase
+      const userId = session.user.id
+
+      // 1️⃣ Cargar perfil
+      const { data: pData, error: pErr } = await supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_url, wisher_number')
-        .eq('user_id', session.user.id)
+        .select('user_id, full_name')
+        .eq('user_id', userId)
         .single()
 
-      if (error) {
-        console.error(error)
-        setMsg('Error cargando tu perfil')
-      } else {
-        setProfile(data as Profile)
+      if (pErr) {
+        console.error(pErr)
+        setMsg('Error cargando perfil')
+        return
       }
 
-      setLoading(false)
+      setProfile({
+        id: pData.user_id,
+        full_name: pData.full_name
+      })
+
+      // 2️⃣ Buscar el avatar elegido por el usuario en user_avatars
+      const { data: ua, error: uaErr } = await supabase
+        .from('user_avatars')
+        .select('avatar_id')
+        .eq('user_id', userId)
+        .single()
+
+      if (uaErr) {
+        console.error(uaErr)
+        return
+      }
+
+      if (ua && ua.avatar_id) {
+        // 3️⃣ Obtener el avatar real desde avatars
+        const { data: avData, error: avErr } = await supabase
+          .from('avatars')
+          .select('id, name, image_url')
+          .eq('id', ua.avatar_id)
+          .single()
+
+        if (avErr) {
+          console.error(avErr)
+          return
+        }
+
+        setAvatar(avData)
+      }
     })()
   }, [])
 
-  async function signOut() {
+  async function logout() {
     await supabase.auth.signOut()
     window.location.href = '/'
   }
 
-  if (loading) {
-    return (
-      <main style={{maxWidth:720, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
-        <h1>Panel</h1>
-        <p>Cargando perfil…</p>
-      </main>
-    )
-  }
-
   return (
     <main style={{maxWidth:720, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
+
       <h1>Panel</h1>
 
-      {/* Bloque de usuario */}
-      <section style={{display:'flex', alignItems:'center', marginTop:24, gap:16}}>
-        <div style={{width:96, height:96, borderRadius:24, overflow:'hidden', background:'#f5f5f5'}}>
-          {profile?.avatar_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={profile.avatar_url}
-              alt="Avatar"
-              style={{width:'100%', height:'100%', objectFit:'cover'}}
-            />
-          )}
-        </div>
+      {msg && <p>{msg}</p>}
 
-        <div>
-          <p style={{margin:0, fontSize:18, fontWeight:600}}>
-            {profile?.display_name || 'Sin nombre'}
+      {profile && (
+        <>
+          <div style={{display:'flex', gap:16, alignItems:'center', marginTop:24}}>
+            
+            {/* Avatar real */}
+            {avatar ? (
+              <img
+                src={avatar.image_url}
+                alt={avatar.name}
+                style={{width:120, height:120, borderRadius:20, objectFit:'cover'}}
+              />
+            ) : (
+              <div style={{width:120, height:120, borderRadius:20, background:'#eee'}}></div>
+            )}
+
+            <div>
+              <h2>{profile.full_name}</h2>
+              <p style={{color:'#666'}}>ID: {profile.id}</p>
+            </div>
+          </div>
+
+          <p style={{marginTop:30}}>
+            <Link href="/answer">Responder pregunta</Link>
           </p>
+          <p><Link href="/leaderboard">Leaderboard</Link></p>
+          <p><Link href="/avatars">Cambiar avatar</Link></p>
 
-          {/* Wisher.X */}
-          <p style={{margin:'4px 0', fontSize:14, color:'#555'}}>
-            {profile?.wisher_number
-              ? `Wisher.${profile.wisher_number}`
-              : 'Wisher.?'}
-          </p>
-
-          <p style={{margin:'4px 0', fontSize:12, color:'#777'}}>
-            ID: {profile?.user_id}
-          </p>
-        </div>
-      </section>
-
-      {/* Acciones */}
-      <section style={{marginTop:32, display:'flex', flexDirection:'column', gap:12}}>
-        <Link href="/answer" style={{color:'#2b0bbf', textDecoration:'underline', fontSize:16}}>
-          Responder pregunta
-        </Link>
-
-        <Link href="/leaderboard" style={{color:'#2b0bbf', textDecoration:'underline', fontSize:16}}>
-          Leaderboard
-        </Link>
-
-        <Link href="/avatars" style={{color:'#2b0bbf', textDecoration:'underline', fontSize:16}}>
-          Cambiar avatar
-        </Link>
-      </section>
-
-      {msg && (
-        <p style={{marginTop:20, color:'crimson', fontSize:14}}>
-          {msg}
-        </p>
+          <button onClick={logout}
+            style={{marginTop:30, padding:'10px 14px', borderRadius:8}}>
+            Cerrar sesión
+          </button>
+        </>
       )}
 
-      <button
-        onClick={signOut}
-        style={{
-          marginTop:32,
-          padding:'10px 16px',
-          borderRadius:8,
-          border:'1px solid #333',
-          background:'#fff',
-          cursor:'pointer'
-        }}
-      >
-        Cerrar sesión
-      </button>
     </main>
   )
 }
