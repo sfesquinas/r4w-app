@@ -36,7 +36,8 @@ export default function AvatarsPage() {
 
       if (error) {
         console.error('Error cargando avatares', error)
-        setMsg('Error cargando avatares')
+        setMsg('Error cargando avatares: ' + error.message)
+        setAvatars([])
       } else {
         setAvatars((data || []) as CatalogAvatar[])
       }
@@ -54,17 +55,14 @@ export default function AvatarsPage() {
       return
     }
 
-    // Guardamos el avatar elegido en user_avatars
-    const { error } = await supabase
-      .from('user_avatars')
-      .upsert(
-        {
-          user_id: session.user.id,
-          avatar_id: avatarId,
-          is_current: true,          // si esta columna no existe, no pasa nada grave: solo dará error al guardar
-        },
-        { onConflict: 'user_id' }     // un avatar “actual” por usuario
-      )
+    const { error } = await supabase.from('user_avatars').upsert(
+      {
+        user_id: session.user.id,
+        avatar_id: avatarId,
+        is_current: true,
+      },
+      { onConflict: 'user_id' }
+    )
 
     if (error) {
       console.error('Error guardando avatar', error)
@@ -88,7 +86,8 @@ export default function AvatarsPage() {
 
       {loading && <p>Cargando…</p>}
 
-      {!loading && avatars.length === 0 && (
+      {/* Solo mostramos "no hay avatares" si NO hay error */}
+      {!loading && !msg && avatars.length === 0 && (
         <p>No hay avatares configurados.</p>
       )}
 
@@ -134,6 +133,7 @@ export default function AvatarsPage() {
         </div>
       )}
 
+      {/* Aquí veremos el mensaje real del error */}
       {msg && <p style={{ marginTop: 16 }}>{msg}</p>}
 
       <p style={{ marginTop: 24 }}>
