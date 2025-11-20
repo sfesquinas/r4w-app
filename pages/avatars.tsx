@@ -10,92 +10,76 @@ type Avatar = {
   required_points: number
 }
 
-type AvatarWithStatus = Avatar & {
-  unlocked: boolean
-  remaining: number
-}
-
 type AnswerRow = {
   is_correct: boolean
 }
 
 export default function AvatarsPage() {
-  const [avatars, setAvatars] = useState<AvatarWithStatus[]>([])
+  const [avatars, setAvatars] = useState<Avatar[]>([])
   const [msg, setMsg] = useState('')
-  const [loading, setLoading] = useState(true)
   const [points, setPoints] = useState(0)
 
   useEffect(() => {
     (async () => {
-      // 1) comprobar sesión
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         window.location.href = '/'
         return
       }
 
-      // 2) calcular puntos del usuario (nº de respuestas correctas)
+      // 1) PUNTOS DEL USUARIO (respuestas correctas)
       const { data: answers, error: answersError } = await supabase
         .from('answers')
-        .select<AnswerRow>('is_correct')
+        .select('is_correct')        // <- sin genérico, solo el nombre de la columna
         .eq('user_id', session.user.id)
 
       if (answersError) {
         console.error(answersError)
-        setMsg('Error calculando tus puntos: ' + answersError.message)
-        setLoading(false)
-        return
+      } else if (answers) {
+        const rows = answers as AnswerRow[]
+        const totalCorrect = rows.filter(a => a.is_correct).length
+        setPoints(totalCorrect)
       }
 
-      const correctCount = (answers || []).filter(a => a.is_correct).length
-      setPoints(correctCount)
-
-      // 3) leer catálogo de avatares
+      // 2) AVATARES DISPONIBLES
       const { data, error } = await supabase
         .from('avatars')
-        .select<Avatar>('id, name, image_url, base_unlocked, required_points')
+        .select('id, name, image_url, base_unlocked, required_points')
         .order('required_points', { ascending: true })
 
       if (error) {
         console.error(error)
         setMsg('Error cargando avatares: ' + error.message)
-        setLoading(false)
         return
       }
 
       if (!data || data.length === 0) {
         setMsg('No hay avatares configurados.')
-        setLoading(false)
         return
       }
 
-      // 4) calcular si cada avatar está desbloqueado o no
-      const withStatus: AvatarWithStatus[] = data.map(av => {
-        const unlocked = av.base_unlocked || correctCount >= av.required_points
-        const remaining = av.base_unlocked
-          ? 0
-          : Math.max(av.required_points - correctCount, 0)
-
-        return { ...av, unlocked, remaining }
-      })
-
-      setAvatars(withStatus)
-      setLoading(false)
+      setAvatars(data as Avatar[])
     })()
   }, [])
 
-  async function selectAvatar(av: AvatarWithStatus) {
-    setMsg('')
-
-    // si no está desbloqueado, no dejamos seleccionarlo
-    if (!av.unlocked) {
-      setMsg(`❌ Aún no has desbloqueado este avatar. Te faltan ${av.remaining} puntos.`)
-      return
-    }
+  async function selectAvatar(avatarId: string) {
+    setMsg('Guardando avatar…')
 
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) {
       window.location.href = '/'
+      return
+    }
+
+    const avatar = avatars.find(a => a.id === avatarId)
+    if (!avatar) {
+      setMsg('Avatar no encontrado')
+      return
+    }
+
+    // LÓGICA DE DESBLOQUEO
+    if (!avatar.base_unlocked && points < avatar.required_points) {
+      setMsg(`⚠️ Necesitas ${avatar.required_points} puntos para desbloquear este avatar.`)
       return
     }
 
@@ -104,9 +88,9 @@ export default function AvatarsPage() {
       .upsert(
         {
           user_id: session.user.id,
-          avatar_id: av.id,
-          source: 'manual',           // opcional, por si quieres saber de dónde viene
-          unlocked_at: new Date().toISOString()
+          avatar_id: avatarId,
+          avatar_code: null,    // ya no usamos avatar_code, pero la columna existe
+          source: 'manual'
         },
         { onConflict: 'user_id' }
       )
@@ -121,73 +105,61 @@ export default function AvatarsPage() {
   }
 
   return (
-    <main style={{maxWidth:900, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
+    <main style={{ maxWidth: 900, margin: '40px auto', fontFamily: 'system-ui', padding: '0 16px' }}>
       <h1>Elige tu avatar</h1>
       <p>Toque para seleccionar. Se guardará en tu perfil.</p>
 
-      <p style={{marginTop:8, fontSize:14}}>
-        Tus puntos actuales: <strong>{points}</strong>
-      </p>
+      <p style={{ marginTop: 8 }}>Tus puntos actuales: <strong>{points}</strong></p>
 
-      {loading && <p style={{marginTop:12}}>Cargando…</p>}
+      {avatars.length === 0 && !msg && <p>Cargando…</p>}
 
-      {msg && <p style={{marginTop:12}}>{msg}</p>}
+      {msg && <p style={{ marginTop: 12 }}>{msg}</p>}
 
-      <div style={{display:'flex', flexWrap:'wrap', gap:16, marginTop:24}}>
-        {avatars.map(av => (
-          <div
-            key={av.id}
-            style={{
-              border:'1px solid #ddd',
-              borderRadius:16,
-              padding:12,
-              width:160,
-              textAlign:'center',
-              opacity: av.unlocked ? 1 : 0.55,
-              position:'relative'
-            }}
-          >
-            <img
-              src={av.image_url}
-              alt={av.name}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 24 }}>
+        {avatars.map(av => {
+          const unlocked = av.base_unlocked || points >= av.required_points
+
+          return (
+            <div
+              key={av.id}
               style={{
-                width:120,
-                height:120,
-                borderRadius:12,
-                objectFit:'cover',
-                marginBottom:8,
-                border: av.unlocked ? '2px solid #6b4eff' : '2px solid #ccc'
+                border: '1px solid #ddd',
+                borderRadius: 16,
+                padding: 12,
+                width: 160,
+                textAlign: 'center',
+                opacity: unlocked ? 1 : 0.5
               }}
-            />
-            <div style={{fontWeight:600, marginBottom:4}}>{av.name}</div>
-
-            <div style={{fontSize:12, color:'#555', marginBottom:8}}>
-              {av.base_unlocked
-                ? 'Disponible desde el inicio'
-                : av.unlocked
-                  ? `Desbloqueado con ${av.required_points} puntos`
-                  : `Necesitas ${av.required_points} puntos (te faltan ${av.remaining})`}
-            </div>
-
-            <button
-              onClick={() => selectAvatar(av)}
-              style={{
-                padding:'6px 10px',
-                borderRadius:8,
-                cursor: av.unlocked ? 'pointer' : 'not-allowed',
-                backgroundColor: av.unlocked ? '#000' : '#999',
-                color:'#fff',
-                border:'none'
-              }}
-              disabled={!av.unlocked}
             >
-              {av.unlocked ? 'Seleccionar' : 'Bloqueado'}
-            </button>
-          </div>
-        ))}
+              <img
+                src={av.image_url}
+                alt={av.name}
+                style={{
+                  width: 120,
+                  height: 120,
+                  borderRadius: 12,
+                  objectFit: 'cover',
+                  marginBottom: 8
+                }}
+              />
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>{av.name}</div>
+              <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>
+                {av.base_unlocked
+                  ? 'Disponible desde el inicio'
+                  : `Necesitas ${av.required_points} puntos`}
+              </div>
+              <button
+                onClick={() => selectAvatar(av.id)}
+                style={{ padding: '6px 10px', borderRadius: 8 }}
+              >
+                Seleccionar
+              </button>
+            </div>
+          )
+        })}
       </div>
 
-      <p style={{marginTop:24}}>
+      <p style={{ marginTop: 24 }}>
         <Link href="/dashboard">Volver al panel</Link>
       </p>
     </main>
