@@ -48,7 +48,7 @@ export default function AnswerPage() {
     })()
   }, [])
 
-    async function submit() {
+  async function submit() {
     if (!q || choice === null) { 
       setMsg('Selecciona una opción'); 
       return; 
@@ -59,7 +59,6 @@ export default function AnswerPage() {
 
     const correct = choice === q.correct_index
 
-    // Fecha del día (YYYY-MM-DD) para answer_date
     const todayStr = new Date().toISOString().slice(0, 10)
 
     const { error } = await supabase.from('answers').insert({
@@ -69,6 +68,20 @@ export default function AnswerPage() {
       is_correct: correct,
       answer_date: todayStr
     })
+
+    if (error) {
+      console.error(error)
+      // @ts-ignore
+      if (error.code === '23505') {
+        setMsg('🥇 Ya has respondido hoy. Vuelve mañana para seguir avanzando.')
+      } else {
+        setMsg('Error guardando: ' + error.message)
+      }
+      return
+    }
+
+    setMsg(correct ? '✅ ¡Correcta!' : '❌ No es correcta')
+  }
 
     if (error) {
       console.error(error)
