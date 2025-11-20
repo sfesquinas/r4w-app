@@ -46,25 +46,44 @@ export default function AnswerPage() {
     })()
   }, [])
 
-  async function submit() {
-    if (!q || choice === null) { setMsg('Selecciona una opción'); return }
+    async function submit() {
+    if (!q || choice === null) { 
+      setMsg('Selecciona una opción'); 
+      return; 
+    }
 
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { window.location.href = '/'; return }
 
     const correct = choice === q.correct_index
 
+    // Fecha del día (YYYY-MM-DD) para answer_date
+    const todayStr = new Date().toISOString().slice(0, 10)
+
     const { error } = await supabase.from('answers').insert({
       user_id: session.user.id,
       question_id: q.id,
       selected_index: choice,
-      is_correct: correct
+      is_correct: correct,
+      answer_date: todayStr
     })
 
-    setMsg(error ? ('Error guardando: ' + error.message) :
-      (correct ? '✅ ¡Correcta!' : '❌ No es correcta'))
-  }
+    if (error) {
+      console.error(error)
+      // Si es por la unique (ya respondió hoy)
+      // código típico de Postgres: 23505
+      // @ts-ignore
+      if (error.code === '23505') {
+        setMsg('🥇 Ya has respondido hoy. Vuelve mañana para seguir avanzando.')
+      } else {
+        setMsg('Error guardando: ' + error.message)
+      }
+      return
+    }
 
+    setMsg(correct ? '✅ ¡Correcta!' : '❌ No es correcta')
+  }
+  
   return (
     <main style={{maxWidth:720, margin:'40px auto', fontFamily:'system-ui', padding:'0 16px'}}>
       <h1>Responder</h1>
