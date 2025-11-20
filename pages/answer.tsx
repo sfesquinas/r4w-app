@@ -51,6 +51,7 @@ export default function AvatarsPage() {
       }
 
       // 3) Listado de avatares
+      // 👇 OJO: aquí NO filtramos por base_unlocked
       const { data: avs, error: avErr } = await supabase
         .from('avatars')
         .select('id, name, image_url, base_unlocked, required_points')
