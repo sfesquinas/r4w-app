@@ -48,7 +48,7 @@ export default function AnswerPage() {
     })()
   }, [])
 
-  async function submit() {
+    async function submit() {
     if (!q || choice === null) { 
       setMsg('Selecciona una opción'); 
       return; 
@@ -65,6 +65,7 @@ export default function AnswerPage() {
       user_id: session.user.id,
       question_id: q.id,
       selected_index: choice,
+      chosen_index: choice,   // 👈 rellenamos también este
       is_correct: correct,
       answer_date: todayStr
     })
@@ -82,7 +83,7 @@ export default function AnswerPage() {
 
     setMsg(correct ? '✅ ¡Correcta!' : '❌ No es correcta')
   }
-
+  
     if (error) {
       console.error(error)
       // Si es por la unique (ya respondió hoy)
