@@ -5,9 +5,10 @@ import Link from 'next/link'
 type Question = {
   id: string
   prompt: string
-  options: string[]        // almacenado como jsonb en la tabla
+  options: string[]
   correct_index: number
   category: string | null
+  day?: string      // opcional, por si quieres usarlo después
 }
 
 export default function AnswerPage() {
