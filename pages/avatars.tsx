@@ -1,6 +1,7 @@
+// pages/avatars.tsx
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabaseClient'
 import Link from 'next/link'
+import { supabase } from '../lib/supabaseClient'
 
 type CatalogAvatar = {
   id: string
@@ -12,45 +13,32 @@ type CatalogAvatar = {
 
 export default function AvatarsPage() {
   const [avatars, setAvatars] = useState<CatalogAvatar[]>([])
-  const [currentId, setCurrentId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
-    (async () => {
-      setLoading(true)
+    ;(async () => {
       setMsg('')
+      setLoading(true)
 
+      // 1) Comprobar sesión
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         window.location.href = '/'
         return
       }
 
-      // 1) catálogo completo
-      const { data: catalog, error: catError } = await supabase
+      // 2) Cargar catálogo de avatares DESDE avatars_catalog
+      const { data, error } = await supabase
         .from('avatars_catalog')
-        .select('*')
+        .select('id, name, image_url, base_unlocked, required_points')
         .order('required_points', { ascending: true })
 
-      if (catError || !catalog) {
+      if (error) {
+        console.error('Error cargando avatares', error)
         setMsg('Error cargando avatares')
-        setLoading(false)
-        return
-      }
-
-      setAvatars(catalog as CatalogAvatar[])
-
-      // 2) avatar actual del usuario
-      const { data: ua, error: uaError } = await supabase
-        .from('user_avatars')
-        .select('avatar_id')
-        .eq('user_id', session.user.id)
-        .eq('is_current', true)
-        .maybeSingle()
-
-      if (!uaError && ua && ua.avatar_id) {
-        setCurrentId(ua.avatar_id as string)
+      } else {
+        setAvatars((data || []) as CatalogAvatar[])
       }
 
       setLoading(false)
@@ -58,44 +46,32 @@ export default function AvatarsPage() {
   }, [])
 
   async function selectAvatar(avatarId: string) {
-    setMsg('')
+    setMsg('Guardando avatar…')
+
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) {
       window.location.href = '/'
       return
     }
 
-    setMsg('Guardando...')
-
-    // Ponemos todos en false y este en true.
-    // (si la estructura es distinta, luego ajustamos, pero así debería valer
-    // para user_avatars con columnas user_id, avatar_id, is_current)
-    const userId = session.user.id
-
-    await supabase
-      .from('user_avatars')
-      .update({ is_current: false })
-      .eq('user_id', userId)
-
-    const { error: upsertError } = await supabase
+    // Guardamos el avatar elegido en user_avatars
+    const { error } = await supabase
       .from('user_avatars')
       .upsert(
         {
-          user_id: userId,
+          user_id: session.user.id,
           avatar_id: avatarId,
-          is_current: true,
-          unlocked_at: new Date().toISOString(),
-        } as any,
-        { onConflict: 'user_id,avatar_id' }
+          is_current: true,          // si esta columna no existe, no pasa nada grave: solo dará error al guardar
+        },
+        { onConflict: 'user_id' }     // un avatar “actual” por usuario
       )
 
-    if (upsertError) {
-      setMsg('Error guardando avatar: ' + upsertError.message)
-      return
+    if (error) {
+      console.error('Error guardando avatar', error)
+      setMsg('Error guardando avatar: ' + error.message)
+    } else {
+      setMsg('✅ Avatar actualizado')
     }
-
-    setCurrentId(avatarId)
-    setMsg('✅ Avatar actualizado')
   }
 
   return (
@@ -110,76 +86,57 @@ export default function AvatarsPage() {
       <h1>Elige tu avatar</h1>
       <p>Toque para seleccionar. Se guardará en tu perfil.</p>
 
-      {loading && <p>Cargando avatares…</p>}
+      {loading && <p>Cargando…</p>}
 
-      {!loading && (
+      {!loading && avatars.length === 0 && (
+        <p>No hay avatares configurados.</p>
+      )}
+
+      {!loading && avatars.length > 0 && (
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
             gap: 16,
             marginTop: 24,
           }}
         >
-          {avatars.map((av) => {
-            const isCurrent = currentId === av.id
-
-            return (
-              <div
-                key={av.id}
+          {avatars.map((av) => (
+            <button
+              key={av.id}
+              onClick={() => selectAvatar(av.id)}
+              style={{
+                border: '1px solid #ddd',
+                borderRadius: 16,
+                padding: 12,
+                cursor: 'pointer',
+                textAlign: 'center',
+                background: '#fff',
+              }}
+            >
+              <img
+                src={av.image_url}
+                alt={av.name}
                 style={{
-                  border: isCurrent ? '3px solid #7C3AED' : '1px solid #ddd',
-                  borderRadius: 16,
-                  padding: 12,
-                  textAlign: 'center',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
+                  width: '100%',
+                  borderRadius: 12,
+                  marginBottom: 8,
                 }}
-              >
-                <div
-                  style={{
-                    width: 140,
-                    height: 140,
-                    margin: '0 auto 8px',
-                    borderRadius: 16,
-                    overflow: 'hidden',
-                    background: '#f3f3f3',
-                  }}
-                >
-                  <img
-                    src={av.image_url}
-                    alt={av.name}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
+              />
+              <div style={{ fontWeight: 600 }}>{av.name}</div>
+              {!av.base_unlocked && (
+                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                  Requiere {av.required_points} puntos
                 </div>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>{av.name}</div>
-                <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>
-                  {av.required_points > 0
-                    ? `Requiere ${av.required_points} puntos`
-                    : 'Disponible desde el inicio'}
-                </div>
-                <button
-                  onClick={() => selectAvatar(av.id)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 999,
-                    border: 'none',
-                    cursor: 'pointer',
-                    backgroundColor: isCurrent ? '#7C3AED' : '#111827',
-                    color: '#fff',
-                    fontSize: 14,
-                  }}
-                >
-                  {isCurrent ? 'Avatar actual' : 'Seleccionar'}
-                </button>
-              </div>
-            )
-          })}
+              )}
+            </button>
+          ))}
         </div>
       )}
 
       {msg && <p style={{ marginTop: 16 }}>{msg}</p>}
 
-      <p style={{ marginTop: 32 }}>
+      <p style={{ marginTop: 24 }}>
         <Link href="/dashboard">Volver al panel</Link>
       </p>
     </main>
