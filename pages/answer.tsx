@@ -15,27 +15,12 @@ export default function AnswerPage() {
   const [choice, setChoice] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
 
-    useEffect(() => {
+      useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { window.location.href = '/'; return }
 
-      // 1) Comprobar si ya respondió hoy
-      const { data: answered, error: errAnswered } = await supabase
-        .rpc('r4w_answered_today', { uid: session.user.id })
-
-      if (errAnswered) {
-        console.error(errAnswered)
-        setMsg('Error comprobando respuesta diaria')
-        return
-      }
-
-      if (answered === true) {
-        setMsg('🥇 Ya has respondido hoy')
-        return
-      }
-
-      // 2) Cargar pregunta (una aleatoria o la del día)
+      // Traemos 1 pregunta aleatoria desde la RPC
       const { data, error } = await supabase.rpc('r4w_pick_question')
 
       if (error) {
@@ -44,8 +29,8 @@ export default function AnswerPage() {
         return
       }
 
-      if (!data || data.length === 0) {
-        setMsg('No hay pregunta disponible')
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        setMsg('No hay preguntas disponibles')
         return
       }
 
