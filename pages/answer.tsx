@@ -16,13 +16,13 @@ export default function AnswerPage() {
   const [choice, setChoice] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
 
-      useEffect(() => {
+  useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { window.location.href = '/'; return }
 
-      // Traemos 1 pregunta aleatoria desde la RPC
-      const { data, error } = await supabase.rpc('r4w_pick_question')
+      // Traemos la pregunta del día (misma para todo el mundo)
+      const { data, error } = await supabase.rpc('r4w_today_question')
 
       if (error) {
         console.error(error)
@@ -31,7 +31,7 @@ export default function AnswerPage() {
       }
 
       if (!data || (Array.isArray(data) && data.length === 0)) {
-        setMsg('No hay preguntas disponibles')
+        setMsg('No hay pregunta disponible hoy')
         return
       }
 
@@ -43,6 +43,7 @@ export default function AnswerPage() {
         options: row.options,
         correct_index: row.correct_index,
         category: row.category,
+        day: row.day
       })
     })()
   }, [])
