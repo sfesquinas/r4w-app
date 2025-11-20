@@ -15,20 +15,49 @@ export default function AnswerPage() {
   const [choice, setChoice] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
 
-  useEffect(() => {
+    useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { window.location.href = '/'; return }
 
-      // Traemos 1 pregunta aleatoria (puedes cambiarlo por “la del día” cuando quieras)
-      const { data, error } = await supabase
-        .from('questions')
-        .select('id, prompt, options, correct_index, category')
-        .order('random()', { ascending: true })
-        .limit(1)
+      // 1) Comprobar si ya respondió hoy
+      const { data: answered, error: errAnswered } = await supabase
+        .rpc('r4w_answered_today', { uid: session.user.id })
 
-      if (error) { setMsg('Error cargando pregunta'); return }
-      if (data && data.length) setQ(data[0] as unknown as Question)
+      if (errAnswered) {
+        console.error(errAnswered)
+        setMsg('Error comprobando respuesta diaria')
+        return
+      }
+
+      if (answered === true) {
+        setMsg('🥇 Ya has respondido hoy')
+        return
+      }
+
+      // 2) Cargar pregunta (una aleatoria o la del día)
+      const { data, error } = await supabase.rpc('r4w_pick_question')
+
+      if (error) {
+        console.error(error)
+        setMsg('Error cargando pregunta: ' + error.message)
+        return
+      }
+
+      if (!data || data.length === 0) {
+        setMsg('No hay pregunta disponible')
+        return
+      }
+
+      const row = Array.isArray(data) ? data[0] : data
+
+      setQ({
+        id: row.id,
+        prompt: row.prompt,
+        options: row.options,
+        correct_index: row.correct_index,
+        category: row.category,
+      })
     })()
   }, [])
 
