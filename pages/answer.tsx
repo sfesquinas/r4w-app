@@ -2,20 +2,17 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '../lib/supabaseClient'
 
-type Avatar = {
+type Question = {
   id: string
-  name: string
-  image_url: string
-  base_unlocked: boolean
-  required_points: number
+  prompt: string
+  options: string[]
+  correct_index: number
+  category: string | null
 }
 
-export default function AvatarsPage() {
-  const [email, setEmail] = useState('')
-  const [avatars, setAvatars] = useState<Avatar[]>([])
-  const [currentAvatar, setCurrentAvatar] = useState<string | null>(null)
-  const [points, setPoints] = useState<number>(0)
-  const [loading, setLoading] = useState(true)
+export default function AnswerPage() {
+  const [question, setQuestion] = useState<Question | null>(null)
+  const [choice, setChoice] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -26,144 +23,106 @@ export default function AvatarsPage() {
         return
       }
 
-      setEmail(session.user.email ?? '')
+      // Pregunta del día mediante la función SQL
+      const { data, error } = await supabase.rpc('r4w_today_question')
 
-      // 1) Perfil: avatar actual
-      const { data: prof, error: profErr } = await supabase
-        .from('profiles')
-        .select('avatar_url')
-        .eq('user_id', session.user.id)
-        .maybeSingle()
-
-      if (!profErr && prof) {
-        setCurrentAvatar((prof as any).avatar_url ?? null)
+      if (error) {
+        console.error(error)
+        setMsg('Error cargando pregunta')
+        return
       }
 
-      // 2) Tus puntos (desde leaderboard)
-      const { data: lb, error: lbErr } = await supabase
-        .from('v_leaderboard_profile')
-        .select('user_id, points')
-        .eq('user_id', session.user.id)
-        .maybeSingle()
-
-      if (!lbErr && lb) {
-        setPoints((lb as any).points ?? 0)
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        setMsg('No hay pregunta hoy')
+        return
       }
 
-      // 3) Listado de avatares
-      // 👇 OJO: aquí NO filtramos por base_unlocked
-      const { data: avs, error: avErr } = await supabase
-        .from('avatars')
-        .select('id, name, image_url, base_unlocked, required_points')
-        .order('required_points', { ascending: true })
+      const row = Array.isArray(data) ? data[0] : data
 
-      if (avErr) {
-        console.error(avErr)
-        setMsg('Error cargando avatares')
-      } else if (avs) {
-        setAvatars(avs as Avatar[])
-      }
-
-      setLoading(false)
+      setQuestion({
+        id: row.id,
+        prompt: row.prompt,
+        options: row.options,
+        correct_index: row.correct_index,
+        category: row.category
+      })
     })()
   }, [])
 
-  const handleSelect = async (avatar: Avatar, unlocked: boolean) => {
-    setMsg('')
-    if (!unlocked) {
-      setMsg('🔒 Este avatar está bloqueado. Necesitas más puntos o futuros wishes.')
+  async function submit() {
+    if (!question || choice === null) {
+      setMsg('Selecciona una opción')
       return
     }
 
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
-      if (typeof window !== 'undefined') window.location.href = '/'
-      return
-    }
+    if (!session) return
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({ avatar_url: avatar.image_url })
-      .eq('user_id', session.user.id)
+    const correct = choice === question.correct_index
+    const todayStr = new Date().toISOString().slice(0, 10)
+
+    const { error } = await supabase.from('answers').insert({
+      user_id: session.user.id,
+      question_id: question.id,
+      selected_index: choice,
+      chosen_index: choice,
+      is_correct: correct,
+      answer_date: todayStr
+    })
 
     if (error) {
       console.error(error)
-      setMsg('Error guardando avatar: ' + error.message)
+
+      if (error.code === '23505') {
+        setMsg('Ya has respondido hoy. Vuelve mañana ✨')
+      } else {
+        setMsg('Error guardando: ' + error.message)
+      }
       return
     }
 
-    setCurrentAvatar(avatar.image_url)
-    setMsg('✅ Avatar actualizado')
-  }
-
-  if (loading) {
-    return (
-      <main style={{ maxWidth: 780, margin: '40px auto', fontFamily: 'system-ui', padding: '0 16px' }}>
-        <p>Cargando avatares…</p>
-      </main>
-    )
+    setMsg(correct ? '✅ ¡Correcta!' : '❌ Incorrecta')
   }
 
   return (
-    <main style={{ maxWidth: 780, margin: '40px auto', fontFamily: 'system-ui', padding: '0 16px' }}>
-      <h1>Elige tu avatar</h1>
-      <p style={{ marginTop: 0, opacity: 0.8 }}>Sesión: <strong>{email}</strong></p>
-      <p style={{ marginTop: 4, fontSize: 14 }}>Puntos actuales: <strong>{points}</strong></p>
+    <main style={{ maxWidth: 720, margin: '40px auto', fontFamily: 'system-ui', padding: '0 16px' }}>
+      <h1>Responder</h1>
 
-      {msg && <p style={{ marginTop: 8 }}>{msg}</p>}
+      {!question && !msg && <p>Cargando…</p>}
 
-      <section
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 16,
-          marginTop: 20
-        }}
-      >
-        {avatars.map((av) => {
-          const unlocked = av.base_unlocked || points >= av.required_points
-          const isCurrent = currentAvatar === av.image_url
+      {question && (
+        <>
+          <h3>{question.prompt}</h3>
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {question.options.map((opt, idx) => (
+              <li key={idx} style={{ margin: '8px 0' }}>
+                <label style={{ display: 'block', cursor: 'pointer', padding: 10, borderRadius: 8, border: '1px solid #ccc' }}>
+                  <input
+                    type="radio"
+                    name="opt"
+                    checked={choice === idx}
+                    onChange={() => setChoice(idx)}
+                  />{' '}
+                  {opt}
+                </label>
+              </li>
+            ))}
+          </ul>
 
-          return (
-            <button
-              key={av.id}
-              onClick={() => handleSelect(av, unlocked)}
-              style={{
-                borderRadius: 12,
-                padding: 10,
-                border: isCurrent ? '2px solid #111' : '1px solid #ddd',
-                background: unlocked ? '#fff' : '#f5f5f5',
-                opacity: unlocked ? 1 : 0.5,
-                cursor: unlocked ? 'pointer' : 'not-allowed',
-                textAlign: 'center'
-              }}
-            >
-              <div style={{ marginBottom: 8 }}>
-                <img
-                  src={av.image_url}
-                  alt={av.name}
-                  width={100}
-                  height={100}
-                  style={{ borderRadius: 12, objectFit: 'cover' }}
-                />
-              </div>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{av.name}</div>
-              {av.required_points > 0 && (
-                <div style={{ fontSize: 12, marginTop: 4 }}>
-                  {unlocked
-                    ? '🔓 Desbloqueado'
-                    : `🔒 Requiere ${av.required_points} puntos`}
-                </div>
-              )}
-              {isCurrent && (
-                <div style={{ fontSize: 12, marginTop: 4, color: '#111' }}>
-                  ✅ Seleccionado
-                </div>
-              )}
-            </button>
-          )
-        })}
-      </section>
+          <button
+            onClick={submit}
+            style={{
+              marginTop: 12,
+              padding: '10px 14px',
+              borderRadius: 8
+            }}
+          >
+            Enviar
+          </button>
+        </>
+      )}
+
+      {msg && <p style={{ marginTop: 12 }}>{msg}</p>}
 
       <p style={{ marginTop: 24 }}>
         <Link href="/dashboard">Volver al panel</Link>
