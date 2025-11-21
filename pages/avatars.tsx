@@ -1,4 +1,3 @@
-// pages/avatars.tsx
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '../lib/supabaseClient'
@@ -17,21 +16,40 @@ type AnswerRow = {
 
 export default function AvatarsPage() {
   const [avatars, setAvatars] = useState<Avatar[]>([])
-  const [points, setPoints] = useState(0)
+  const [points, setPoints] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
     ;(async () => {
-      const { data: { session } } = await supabase.auth.getSession()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
       if (!session) {
         window.location.href = '/'
         return
       }
 
-      // 1) Cargamos avatares
+      // 1) Calcular puntos del usuario (1 punto por respuesta correcta)
+      const { data: answers, error: answersError } = await supabase
+        .from('answers')
+        .select('is_correct')
+        .eq('user_id', session.user.id)
+
+      if (answersError) {
+        console.error(answersError)
+      } else if (answers) {
+        const total = (answers as AnswerRow[]).reduce(
+          (acc, a) => acc + (a.is_correct ? 1 : 0),
+          0
+        )
+        setPoints(total)
+      }
+
+      // 2) Cargar catálogo de avatares
       const { data: avatarsData, error: avatarsError } = await supabase
         .from('avatars')
-        .select<Avatar>('id, name, image_url, base_unlocked, required_points')
+        .select('id, name, image_url, base_unlocked, required_points')
         .order('required_points', { ascending: true })
 
       if (avatarsError) {
@@ -39,53 +57,42 @@ export default function AvatarsPage() {
         setMsg('Error cargando avatares: ' + avatarsError.message)
         return
       }
-      setAvatars(avatarsData || [])
 
-      // 2) Calculamos puntos del usuario (nº de respuestas correctas)
-      const { data: answersData, error: answersError } = await supabase
-        .from('answers')
-        .select<AnswerRow>('is_correct')
-        .eq('user_id', session.user.id)
-
-      if (answersError) {
-        console.error(answersError)
-        // no cortamos la pantalla si falla esto, solo no mostramos puntos
-        return
-      }
-
-      const totalPoints = (answersData || []).filter(a => a.is_correct).length
-      setPoints(totalPoints)
+      setAvatars((avatarsData ?? []) as Avatar[])
     })()
   }, [])
 
-  async function selectAvatar(avatar: Avatar) {
+  async function selectAvatar(
+    avatar: Avatar
+  ) {
     setMsg('')
 
-    const { data: { session } } = await supabase.auth.getSession()
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
     if (!session) {
       window.location.href = '/'
       return
     }
 
-    const isUnlocked =
-      avatar.base_unlocked || points >= avatar.required_points
+    const currentPoints = points ?? 0
 
-    if (!isUnlocked) {
-      setMsg('Este avatar todavía está bloqueado.')
+    // Bloqueo en cliente si no tiene puntos suficientes
+    if (!avatar.base_unlocked && currentPoints < avatar.required_points) {
+      setMsg('Aún no tienes puntos suficientes para este avatar.')
       return
     }
 
-    // 👇 IMPORTANTE: solo usamos avatar_id, NADA de avatar_code
+    // IMPORTANTE: solo usamos user_id y avatar_id
     const { error } = await supabase
       .from('user_avatars')
       .upsert(
         {
           user_id: session.user.id,
           avatar_id: avatar.id,
-          unlocked_at: new Date().toISOString(),
-          source: 'manual'
         },
-        { onConflict: 'user_id' } // un avatar activo por usuario
+        { onConflict: 'user_id' }
       )
 
     if (error) {
@@ -97,13 +104,22 @@ export default function AvatarsPage() {
     setMsg('✅ Avatar actualizado')
   }
 
+  const currentPoints = points ?? 0
+
   return (
-    <main style={{ maxWidth: 1000, margin: '40px auto', fontFamily: 'system-ui', padding: '0 16px' }}>
+    <main
+      style={{
+        maxWidth: 960,
+        margin: '40px auto',
+        fontFamily: 'system-ui',
+        padding: '0 16px',
+      }}
+    >
       <h1>Elige tu avatar</h1>
       <p>Toque para seleccionar. Se guardará en tu perfil.</p>
 
       <p style={{ marginTop: 8 }}>
-        <strong>Tus puntos actuales:</strong> {points}
+        <strong>Tus puntos actuales:</strong> {currentPoints}
       </p>
 
       {msg && <p style={{ marginTop: 12 }}>{msg}</p>}
@@ -114,13 +130,12 @@ export default function AvatarsPage() {
         style={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: 20,
-          marginTop: 24
+          gap: 16,
+          marginTop: 24,
         }}
       >
-        {avatars.map(av => {
-          const isUnlocked =
-            av.base_unlocked || points >= av.required_points
+        {avatars.map((av) => {
+          const unlocked = av.base_unlocked || currentPoints >= av.required_points
 
           return (
             <div
@@ -129,10 +144,10 @@ export default function AvatarsPage() {
                 border: '1px solid #ddd',
                 borderRadius: 16,
                 padding: 12,
-                width: 190,
+                width: 200,
                 textAlign: 'center',
-                opacity: isUnlocked ? 1 : 0.4,
-                background: '#fff'
+                opacity: unlocked ? 1 : 0.4,
+                backgroundColor: '#fafafa',
               }}
             >
               <div
@@ -140,12 +155,12 @@ export default function AvatarsPage() {
                   width: 140,
                   height: 140,
                   margin: '0 auto 8px',
-                  borderRadius: 20,
+                  borderRadius: 16,
                   overflow: 'hidden',
-                  background: '#f3f3f3',
+                  background: '#eee',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
                 }}
               >
                 <img
@@ -154,14 +169,20 @@ export default function AvatarsPage() {
                   style={{
                     width: '100%',
                     height: '100%',
-                    objectFit: 'cover'
+                    objectFit: 'cover',
                   }}
                 />
               </div>
 
               <div style={{ fontWeight: 600, marginBottom: 4 }}>{av.name}</div>
-
-              <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: '#555',
+                  marginBottom: 8,
+                  minHeight: 32,
+                }}
+              >
                 {av.base_unlocked
                   ? 'Disponible desde el inicio'
                   : `Necesitas ${av.required_points} puntos`}
@@ -169,15 +190,14 @@ export default function AvatarsPage() {
 
               <button
                 onClick={() => selectAvatar(av)}
+                disabled={!unlocked}
                 style={{
                   padding: '6px 10px',
-                  borderRadius: 999,
+                  borderRadius: 8,
                   border: '1px solid #333',
-                  cursor: isUnlocked ? 'pointer' : 'not-allowed',
-                  background: isUnlocked ? '#111' : '#eee',
-                  color: isUnlocked ? '#fff' : '#666'
+                  cursor: unlocked ? 'pointer' : 'not-allowed',
+                  backgroundColor: unlocked ? 'white' : '#f0f0f0',
                 }}
-                disabled={!isUnlocked}
               >
                 Seleccionar
               </button>
